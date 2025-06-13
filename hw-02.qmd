@@ -1,18 +1,75 @@
 ---
 title: "HW 02"
-author: "INSERT YOUR NAME HERE"
+author: "Nilotpal Rajbongshi"
 format: 
   html:
     embed-resources: true
 toc: true
+execute:
+  warning: false
+  error: false
+  message: false
 ---
 
-## 1 - A new day, a new plot, a new geom
+## 0 - Setup
 
-```{r}
-#| label: label-me-1
+```{r setup}
+if (!require("pacman")) 
+  install.packages("pacman")
 
+# use this line for installing/loading
+pacman::p_load(dsbox, 
+               dplyr, 
+               ggplot2,
+               ggridges,
+               forcats) 
+
+devtools::install_github("tidyverse/dsbox")
 ```
+
+## 1 - A new day, a new plot, a new geom
+## Question 1: Ridgeline Plot of Airbnb Review Scores
+```{r}
+#| label: Question 1
+# Load and prepare data
+data("edibnb", package = "dsbox")
+
+# Clean and transform
+edibnb_clean <- edibnb %>%
+  filter(
+    !is.na(review_scores_rating),
+    !is.na(neighbourhood)
+  ) %>%
+  mutate(
+    neighbourhood = fct_reorder(neighbourhood, review_scores_rating, median)
+  )
+
+# Plot: Ridgeline of Airbnb review scores by neighborhood
+ggplot(edibnb_clean, aes(x = review_scores_rating, y = neighbourhood)) +
+  geom_density_ridges(
+    scale = 2,
+    rel_min_height = 0.01,
+    aes(fill = neighbourhood),
+    color = "gray40",
+    show.legend = TRUE
+  ) +
+  labs(
+    title = "Plot of Airbnb Review Scores by Neighborhood in Edinburgh",
+    subtitle = "Neighborhoods are ordered by their median review scores",
+    x = "Review Score Rating",
+    y = "Neighborhood",
+    fill = "Neighborhood",
+    caption = "Source: dsbox package, edibnb dataset"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 12, color = "gray40"),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  )
+```
+The ridgeline plot displays the distribution of Airbnb review scores across Edinburgh neighborhoods. Neighborhoods are ordered by their median review scores, allowing us to easily compare their central tendencies and spread. Higher ridges indicate more frequent score values. We observe that some areas consistently have higher review scores, while others show greater variability. Listings with missing neighborhood or review data were excluded here.
 
 ## 2 - Foreign Connected PACs
 
