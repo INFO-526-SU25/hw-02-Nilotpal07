@@ -22,7 +22,11 @@ pacman::p_load(dsbox,
                dplyr, 
                ggplot2,
                ggridges,
-               forcats) 
+               forcats,
+               tidyverse,
+               janitor,
+               fs,
+               scales) 
 
 devtools::install_github("tidyverse/dsbox")
 ```
@@ -74,7 +78,59 @@ The ridgeline plot displays the distribution of Airbnb review scores across Edin
 ## 2 - Foreign Connected PACs
 
 ```{r}
-#| label: label-me-2
+#| label: Question 2
+# Step 1: List files with "Foreign Connected PAC" in their name
+list_of_files <- dir_ls(path = "data", regexp = "Foreign Connected PAC")
+
+# Step 2: Read and combine files, keeping filename in a new column `year`
+pac <- read_csv(list_of_files, id = "year")
+
+# Step 3: Extract year from file path
+pac <- pac %>%
+  mutate(year = str_extract(year, "\\d{4}"))
+
+# Step 4: Clean currency columns
+pac_clean <- pac %>%
+  mutate(across(c(Total, Dems, Repubs), ~ as.numeric(gsub("[$,]", "", .))))
+
+# Step 5: Split country and parent company
+pac_clean <- pac_clean %>%
+  separate(`Country of Origin/Parent Company`,
+           into = c("Country", "Parent_Company"),
+           sep = "/", extra = "merge", fill = "right")
+
+# Step 6: Summarize by Country
+country_summary <- pac_clean %>%
+  group_by(year, Country) %>%
+  summarise(
+    Total = sum(Total, na.rm = TRUE),
+    Dems = sum(Dems, na.rm = TRUE),
+    Repubs = sum(Repubs, na.rm = TRUE)
+  ) %>%
+  arrange(desc(Total))
+
+# Step 7: Get top 10 countries by Total
+top_countries <- country_summary %>%
+  slice_max(Total, n = 10) %>%
+  pull(Country)
+
+# Step 8: Filter and reshape for plotting
+country_long <- country_summary %>%
+  filter(Country == "UK", year %in% unique(pac_clean$year)) %>%
+  pivot_longer(cols = c(Dems, Repubs), names_to = "Party", values_to = "Amount")
+
+# Step 9: Plot
+ggplot(country_long, aes(x = year, y = Amount, color = Party, group = Party)) +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), linewidth = 1.2, se = FALSE) +
+  scale_color_manual(values = c("Dems" = "#2E86C1", "Repubs" = "#C0392B")) +
+  scale_y_continuous(labels = scales::dollar) +
+  labs(
+    title = "Foreign PAC Contributions Over Time (Smoothed)",
+    x = "Year",
+    y = "Total Contributions (USD)",
+    color = "Party"
+  ) +
+  theme_minimal(base_size = 14)
 
 ```
 
