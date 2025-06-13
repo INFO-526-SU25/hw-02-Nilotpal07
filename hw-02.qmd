@@ -28,7 +28,10 @@ pacman::p_load(dsbox,
                fs,
                scales,
                stringr,
-               readr) 
+               readr,
+               tibble,
+               ggforce,
+               palmerpenguins)
 
 devtools::install_github("tidyverse/dsbox")
 ```
@@ -81,21 +84,21 @@ The ridgeline plot displays the distribution of Airbnb review scores across Edin
 
 ```{r}
 #| label: Question 2
-# Step 1: List files with "Foreign Connected PAC" in the filename
+# List files with "Foreign Connected PAC" in the filename
 list_of_files <- dir_ls(path = "data", regexp = "Foreign Connected PAC")
 
-# Step 2: Read and clean data by retaining the filename (as year)
+# Read and clean data by retaining the filename
 pac <- read_csv(list_of_files, id = "year", show_col_types = FALSE) %>%
   clean_names() %>%
   # Extract the year (as a four-digit number) from the file path and convert to integer
   mutate(year = as.integer(str_extract(year, "\\d{4}")))
 
-# Step 3: Clean currency columns (Total, Dems, Repubs) by removing $ and commas
+# Clean currency columns
 pac_clean <- pac %>%
   mutate(across(c(total, dems, repubs), 
                 ~ parse_number(str_replace_all(., "[$,]", ""))))
 
-# Step 4: Reshape the data from wide to long format
+# Reshape the data from wide to long format
 pac_long <- pac_clean %>%
   pivot_longer(
     cols = c(dems, repubs),
@@ -108,33 +111,136 @@ pac_long <- pac_clean %>%
                    "repubs" = "Republican")
   )
 
-# Step 5: Filter for UK-connected PACs and summarize contributions per year and party
+# Filter for UK-connected PACs and summarize contributions per year and party
 uk_pac_summary <- pac_long %>%
   filter(str_starts(country_of_origin_parent_company, regex("UK/", ignore_case = TRUE))) %>%
   group_by(year, party) %>%
   summarise(total_amount = sum(amount, na.rm = TRUE), .groups = "drop")
 
-# Step 6: Create the plot
+# Creating the plot for UK PACs
 print(ggplot(uk_pac_summary, aes(x = year, y = total_amount, color = party)) +
-  geom_line(linewidth = 1.5) +
+  geom_line(linewidth = 1) +
   scale_y_continuous(labels = dollar_format(scale = 1e-6, suffix = "M", accuracy = 0.1)) +
   labs(
-    title = "Contributions to US Political Parties from UK-Connected PACs",
+    title = "Contributions to US political parties from UK-connected PACs",
     x = "Year",
     y = "Total Amount",
     color = "Party",
     caption = "Source: OpenSecrets.org"
   ) +
   theme_minimal(base_size = 12) +
+  theme(
+    legend.position = c(0.9, 0.20),
+    axis.title.x = element_text(hjust = 0),
+    axis.title.y = element_text(hjust = 0)
+  ) + 
   scale_color_manual(values = c("Democrat" = "blue", "Republican" = "red")))
 
-glimpse(uk_pac_summary)
+germany_pac_summary <- pac_long %>%
+  filter(str_starts(country_of_origin_parent_company, "Germany/")) %>%
+  group_by(year, party) %>%
+  summarise(total_amount = sum(amount, na.rm = TRUE), .groups = "drop")
+
+#Creating the plot for Germany PACs
+ggplot(germany_pac_summary, aes(x = year, y = total_amount, color = party)) +
+  geom_line(linewidth = 1) +
+  scale_y_continuous(labels = dollar_format(scale = 1e-6, suffix = "M", accuracy = 0.1)) +
+  labs(
+    title = "Contributions to US political parties from German-connected PACs",
+    x = "Year",
+    y = "Total Amount",
+    color = "Party",
+    caption = "Source: OpenSecrets.org"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = c(0.9, 0.20),
+    axis.title.x = element_text(hjust = 0),
+    axis.title.y = element_text(hjust = 0)
+  ) +
+  scale_color_manual(values = c("Democrat" = "blue", "Republican" = "red"))
 ```
 
 ## 3 - Median housing prices in the US
+```{r}
 
+```
 
 ## 4 - Expect More. Plot More.
+```{r}
+# ------------------------------------------------------------------
+# Resources Used
+# ------------------------------------------------------------------
+# 1. Target color source : corporate.target.com
+# ------------------------------------------------------------------
 
+# Target's signature red color
+target_red <- "#CC0000"
+
+# Create a dataset with circle parameters using tibble()
+circles <- tibble::tibble(
+  x0 = 0,
+  y0 = 0,
+  r = c(10, 6, 3),
+  fill = c(target_red, "white", target_red)
+)
+
+# Generate the plot using ggplot2 and ggforce::geom_circle to draw circles in layers
+ggplot() +
+  # Outer red circle drawn
+  geom_circle(data = circles[1, ], aes(x0 = x0, y0 = y0, r = r),
+              fill = target_red, color = NA) +
+  # White circle drawn
+  geom_circle(data = circles[2, ], aes(x0 = x0, y0 = y0, r = r),
+              fill = "white", color = NA) +
+  # Inner red circle drawn
+  geom_circle(data = circles[3, ], aes(x0 = x0, y0 = y0, r = r),
+              fill = target_red, color = NA) +
+  # Fix the coordinate ratio to ensure circles remain circular and not distorted
+  coord_fixed() +
+  #Add the "TARGET®" text below the circles
+  annotate("text", x = 0, y = -12,
+           label = expression(bold("TARGET"["\u00AE"])),
+           color = target_red, size = 8, fontface = "bold") +
+  # Use a minimal theme to remove axes, gridlines, and background
+  theme_void()
+```
+This code creates a dataset with three concentric circles using tibble() and plots them with geom_circle() in a specific order to replicate the Target logo—the outer red circle is drawn first, followed by a white circle and then an inner red circle. The annotation uses an expression with bold("TARGET"["\u00AE"]) to display "TARGET" in bold with the registered trademark symbol as a subscript, while coord_fixed() maintains the correct aspect ratio.
 
 ## 5 - Mirror, mirror on the wall, who’s the ugliest of them all?
+```{r}
+# Normal Plot
+ggplot(penguins, aes(x = bill_length_mm, y = bill_depth_mm, color = species)) +
+  geom_point(size = 3, alpha = 0.8) +
+  labs(
+    title = "Penguin Bill Dimensions by Species",
+    x = "Bill Length (mm)",
+    y = "Bill Depth (mm)",
+    color = "Species"
+  ) +
+  theme_minimal()
+
+# Ugly plot
+ggplot(data = penguins, aes(x = bill_length_mm, y = bill_depth_mm, color = species, shape = island)) +
+  geom_point(size = 5, stroke = 3, alpha = 0.9) +
+  labs(
+    title = "UGLY Plot: Penguins Dataset",
+    subtitle = "Bill Length vs. Bill depth",
+    caption = "Data from palmerpenguins package"
+  ) +
+  theme(
+    plot.background = element_rect(fill = "yellow", color = "red", size = 3),
+    panel.background = element_rect(fill = "#00FF00", color = "blue", size = 2),   # replaced "lime" with "#00FF00"
+    panel.grid.major = element_line(color = "purple", linetype = "dotted", size = 2),
+    panel.grid.minor = element_line(color = "orange", linetype = "dashed"),
+    axis.title = element_text(color = "pink", face = "bold", size = 20, family = "Comic Sans MS"),
+    axis.text = element_text(color = "cyan", size = 15, family = "Comic Sans MS"),
+    legend.background = element_rect(fill = "magenta"),
+    legend.title = element_text(color = "darkgreen", face = "italic", size = 15, family = "Comic Sans MS"),
+    legend.text = element_text(color = "darkblue", size = 12, family = "Comic Sans MS"),
+    plot.title = element_text(color = "red", face = "bold.italic", size = 30, family = "Comic Sans MS"),
+    plot.subtitle = element_text(color = "blue", face = "bold", size = 25, family = "Comic Sans MS"),
+    plot.caption = element_text(color = "brown", size = 20, family = "Comic Sans MS")
+  ) +
+  scale_color_manual(values = c("Adelie" = "black", "Chinstrap" = "darkred", "Gentoo" = "chartreuse4"))
+```
