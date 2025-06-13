@@ -26,7 +26,9 @@ pacman::p_load(dsbox,
                tidyverse,
                janitor,
                fs,
-               scales) 
+               scales,
+               stringr,
+               readr) 
 
 devtools::install_github("tidyverse/dsbox")
 ```
@@ -79,59 +81,54 @@ The ridgeline plot displays the distribution of Airbnb review scores across Edin
 
 ```{r}
 #| label: Question 2
-# Step 1: List files with "Foreign Connected PAC" in their name
+# Step 1: List files with "Foreign Connected PAC" in the filename
 list_of_files <- dir_ls(path = "data", regexp = "Foreign Connected PAC")
 
-# Step 2: Read and combine files, keeping filename in a new column `year`
-pac <- read_csv(list_of_files, id = "year")
+# Step 2: Read and clean data by retaining the filename (as year)
+pac <- read_csv(list_of_files, id = "year", show_col_types = FALSE) %>%
+  clean_names() %>%
+  # Extract the year (as a four-digit number) from the file path and convert to integer
+  mutate(year = as.integer(str_extract(year, "\\d{4}")))
 
-# Step 3: Extract year from file path
-pac <- pac %>%
-  mutate(year = str_extract(year, "\\d{4}"))
-
-# Step 4: Clean currency columns
+# Step 3: Clean currency columns (Total, Dems, Repubs) by removing $ and commas
 pac_clean <- pac %>%
-  mutate(across(c(Total, Dems, Repubs), ~ as.numeric(gsub("[$,]", "", .))))
+  mutate(across(c(total, dems, repubs), 
+                ~ parse_number(str_replace_all(., "[$,]", ""))))
 
-# Step 5: Split country and parent company
-pac_clean <- pac_clean %>%
-  separate(`Country of Origin/Parent Company`,
-           into = c("Country", "Parent_Company"),
-           sep = "/", extra = "merge", fill = "right")
-
-# Step 6: Summarize by Country
-country_summary <- pac_clean %>%
-  group_by(year, Country) %>%
-  summarise(
-    Total = sum(Total, na.rm = TRUE),
-    Dems = sum(Dems, na.rm = TRUE),
-    Repubs = sum(Repubs, na.rm = TRUE)
+# Step 4: Reshape the data from wide to long format
+pac_long <- pac_clean %>%
+  pivot_longer(
+    cols = c(dems, repubs),
+    names_to = "party",
+    values_to = "amount"
   ) %>%
-  arrange(desc(Total))
+  mutate(
+    party = recode(party,
+                   "dems" = "Democrat",
+                   "repubs" = "Republican")
+  )
 
-# Step 7: Get top 10 countries by Total
-top_countries <- country_summary %>%
-  slice_max(Total, n = 10) %>%
-  pull(Country)
+# Step 5: Filter for UK-connected PACs and summarize contributions per year and party
+uk_pac_summary <- pac_long %>%
+  filter(str_starts(country_of_origin_parent_company, regex("UK/", ignore_case = TRUE))) %>%
+  group_by(year, party) %>%
+  summarise(total_amount = sum(amount, na.rm = TRUE), .groups = "drop")
 
-# Step 8: Filter and reshape for plotting
-country_long <- country_summary %>%
-  filter(Country == "UK", year %in% unique(pac_clean$year)) %>%
-  pivot_longer(cols = c(Dems, Repubs), names_to = "Party", values_to = "Amount")
-
-# Step 9: Plot
-ggplot(country_long, aes(x = year, y = Amount, color = Party, group = Party)) +
-  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), linewidth = 1.2, se = FALSE) +
-  scale_color_manual(values = c("Dems" = "#2E86C1", "Repubs" = "#C0392B")) +
-  scale_y_continuous(labels = scales::dollar) +
+# Step 6: Create the plot
+print(ggplot(uk_pac_summary, aes(x = year, y = total_amount, color = party)) +
+  geom_line(linewidth = 1.5) +
+  scale_y_continuous(labels = dollar_format(scale = 1e-6, suffix = "M", accuracy = 0.1)) +
   labs(
-    title = "Foreign PAC Contributions Over Time (Smoothed)",
+    title = "Contributions to US Political Parties from UK-Connected PACs",
     x = "Year",
-    y = "Total Contributions (USD)",
-    color = "Party"
+    y = "Total Amount",
+    color = "Party",
+    caption = "Source: OpenSecrets.org"
   ) +
-  theme_minimal(base_size = 14)
+  theme_minimal(base_size = 12) +
+  scale_color_manual(values = c("Democrat" = "blue", "Republican" = "red")))
 
+glimpse(uk_pac_summary)
 ```
 
 ## 3 - Median housing prices in the US
