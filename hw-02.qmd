@@ -22,6 +22,7 @@ pacman::p_load(dsbox,
                dplyr, 
                ggplot2,
                ggridges,
+               ggtext,
                forcats,
                tidyverse,
                janitor,
@@ -32,7 +33,8 @@ pacman::p_load(dsbox,
                tibble,
                ggforce,
                palmerpenguins,
-               lubridate)
+               lubridate,
+               patchwork)
 
 devtools::install_github("tidyverse/dsbox")
 ```
@@ -91,7 +93,7 @@ list_of_files <- dir_ls(path = "data", regexp = "Foreign Connected PAC")
 # Read and clean data by retaining the filename
 pac <- read_csv(list_of_files, id = "year", show_col_types = FALSE) %>%
   clean_names() %>%
-  # Extract the year (as a four-digit number) from the file path and convert to integer
+  # Extract the year from the file path and convert to integer
   mutate(year = as.integer(str_extract(year, "\\d{4}")))
 
 # Clean currency columns
@@ -164,21 +166,22 @@ ggplot(germany_pac_summary, aes(x = year, y = total_amount, color = party)) +
 
 ## 3 - Median housing prices in the US
 ```{r}
-# Load and clean data
-median_housing <- read_csv("data/median-housing.csv") %>%
+# Load and clean the housing data
+median_housing <- read_csv("data/median-housing.csv",show_col_types = FALSE) %>%
   rename(date = DATE, price = MSPUS) %>%
   mutate(date = ymd(date))
 
-# Define y-axis and x-axis breaks
-y_breaks <- seq(0, 400000, by = 40000)
+# Define breaks for the y-axis (dollar labels) and x-axis (years)
+y_breaks <- seq(0, 500000, by = 40000)
 x_breaks <- seq(ymd("1965-01-01"), ymd("2025-01-01"), by = "5 years")
 
 # Create the plot
 ggplot(median_housing, aes(x = date, y = price)) +
   geom_line(color = "#3b60f0", size = 1) +
   scale_y_continuous(
-    breaks = y_breaks,
-    labels = dollar_format()
+  breaks = y_breaks,
+  labels = dollar_format(),
+  limits = c(0, 400000)
   ) +
   scale_x_date(
     breaks = x_breaks,
@@ -192,7 +195,70 @@ ggplot(median_housing, aes(x = date, y = price)) +
     caption = "Sources: Census; HUD"
   ) +
   theme(
-    plot.title = element_text(face = "bold", size = 18),
+  plot.title.position = "plot",
+  plot.title = element_text(size = 16, hjust = 0),
+  plot.subtitle = element_text(size = 14),
+  plot.caption = element_text(hjust = 1, size = 10),
+  axis.title.y = element_text(size = 13, face = "bold"),
+  axis.text = element_text(size = 11),
+  panel.background = element_rect(fill = "white", color = NA),
+  plot.background = element_rect(fill = "white", color = NA),
+  panel.grid.major.x = element_blank(),
+  panel.grid.minor.x = element_blank(),
+  panel.grid.minor.y = element_blank(),
+  panel.grid.major.y = element_line(color = "gray90"),
+  axis.title.x = element_blank()
+)
+
+# Load recessions data
+recessions <- read_csv("data/recessions.csv", show_col_types = FALSE) %>%
+  rename(start = Peak, end = Trough) %>%
+  mutate(
+    start = ymd(start),
+    end = ymd(end)
+  )
+
+# Define data range
+data_start <- min(median_housing$date)
+data_end <- max(median_housing$date)
+
+# Mark recessions in range
+recessions <- recessions %>%
+  mutate(in_range = (end >= data_start) & (start <= data_end))
+
+recessions_in_range <- filter(recessions, in_range)
+
+# Define breaks for consistent axes
+y_breaks <- seq(0, 400000, by = 40000)
+x_breaks <- seq(data_start, data_end, by = "5 years")
+
+# Plot with recession shading behind line
+ggplot() +
+  geom_rect(
+    data = recessions_in_range,
+    aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf),
+    fill = "gray80", alpha = 0.5
+  ) +
+  geom_line(data = median_housing, aes(x = date, y = price), color = "#3b60f0", size = 1) +
+  scale_y_continuous(
+    breaks = y_breaks,
+    labels = dollar_format(),
+    limits = c(0, 400000)
+  ) +
+  scale_x_date(
+    breaks = x_breaks,
+    date_labels = "%Y"
+  ) +
+  labs(
+    title = "Median Sales Price of Houses in the US",
+    subtitle = "Not seasonally adjusted with recession periods shaded",
+    x = NULL,
+    y = "Dollars",
+    caption = "Shaded areas indicate U.S. recession\nSources: Census; HUD"
+  ) +
+  theme(
+    plot.title.position = "plot",
+    plot.title = element_text(size = 16, hjust = 0),
     plot.subtitle = element_text(size = 14),
     plot.caption = element_text(hjust = 1, size = 10),
     axis.title.y = element_text(size = 13, face = "bold"),
@@ -206,6 +272,55 @@ ggplot(median_housing, aes(x = date, y = price)) +
     axis.title.x = element_blank()
   )
 
+housing_subset <- median_housing %>%
+  filter(lubridate::year(date) %in% c(2019, 2020)) %>%
+  mutate(
+    year    = lubridate::year(date),
+    quarter = paste0("Q", lubridate::quarter(date)),
+    period  = paste(year, quarter, sep = " ")
+  )
+
+# Aggregate data to one observation per quarter
+housing_quarterly <- housing_subset %>%
+  group_by(year, quarter, period) %>%
+  summarise(price = median(price, na.rm = TRUE), .groups = "drop") %>%
+  mutate(
+    quarter = factor(quarter, levels = c("Q1", "Q2", "Q3", "Q4")),
+    label = ifelse(quarter == "Q1", paste0("<b>", quarter, "</b><br>", year), paste0("<b>", quarter, "</b><br>"))
+  )
+
+# Plot for houses sold in US
+ggplot(housing_quarterly, aes(x = period, y = price, group = 1)) +
+  geom_line(color = "#3b60f0", size = 1) +
+  geom_point(shape = 21, fill = "white", color = "#3b60f0", size = 1, stroke = 1.2) +
+  scale_x_discrete(
+    labels = housing_quarterly$label,
+    expand = c(0, 0)
+  ) +
+  scale_y_continuous(
+    limits = c(300000, 360000),
+    expand = c(0, 0),
+    breaks = seq(300000, 360000, by = 20000),
+    labels = scales::dollar_format(prefix = "$")
+  ) +
+  labs(
+    title = "Median sales prices of houses sold in the United States",
+    subtitle = "Not seasonally adjusted",
+    y = "Dollars",
+    x = NULL
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.ontop = FALSE,
+    plot.title.position = "plot",
+    axis.text.x = element_markdown(size = 10, lineheight = 0.9),
+    plot.title = element_text(size = 16, hjust = 0),
+    panel.grid.major.x = element_line(color = "gray90", size = 0.8),
+    panel.grid.major.y = element_line(color = "gray90", size = 0.8),
+    panel.border = element_rect(color = "gray90", fill = NA, size = 0.8),
+    plot.background = element_rect(fill = "white", color = NA)
+  ) +
+  coord_cartesian(clip = "off")
 ```
 
 ## 4 - Expect More. Plot More.
